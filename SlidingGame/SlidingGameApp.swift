@@ -9,9 +9,23 @@ import SwiftUI
 
 @main
 struct SlidingGameApp: App {
+    @StateObject var viewRouter = ViewRouter()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            VStack {
+                switch viewRouter.currentPage {
+                    case "main":
+                        ContentView()
+                            .environmentObject(viewRouter)
+                    case "game_over":
+                        GameOverView()
+                            .environmentObject(viewRouter)
+                    default:
+                        ContentView()
+                            .environmentObject(viewRouter)
+                }
+            }
         }
     }
 }

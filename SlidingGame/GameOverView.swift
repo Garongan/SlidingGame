@@ -8,8 +8,28 @@
 import SwiftUI
 
 struct GameOverView: View {
+    @EnvironmentObject var viewRouter: ViewRouter
+    
     var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+        ZStack {
+            Rectangle()
+                .fill(Color.black.opacity(0.7))
+                .edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 16) {
+                Text("Sliding Game")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                Text("Game Over")
+                    .foregroundStyle(.white)
+                Text("Tap to restart")
+                    .foregroundStyle(.white)
+            }
+        }
+        .onTapGesture {
+            viewRouter.isGameOver = false
+            viewRouter.currentPage = "main"
+        }
     }
 }
 

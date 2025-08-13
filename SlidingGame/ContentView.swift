@@ -5,118 +5,235 @@
 //  Created by Alvindo Tri Jatmiko on 13/08/25.
 //
 
-import SwiftUI
 import RealityKit
+import SwiftUI
 
 struct ContentView: View {
+    let playerSpeed: Float = 0.025
+
+    @EnvironmentObject var viewRouter: ViewRouter
+    @State var moveState: SIMD3<Float> = .zero
+    @State var isDirectionOfRandomOfX = false
+    @State var nextDirectionPlayerofX = false
+
     var body: some View {
         ZStack {
             RealityView { content in
-                // If iOS device that is not the simulator,
-                // use the spatial tracking camera.
-                #if os(iOS) && !targetEnvironment(simulator)
-                content.camera = .spatialTracking
-                #endif
+                content.renderingEffects.antialiasing = .none
+                content.renderingEffects.cameraGrain = .disabled
+                content.renderingEffects.depthOfField = .disabled
+                content.renderingEffects.dynamicRange = .standard
+                content.renderingEffects.motionBlur = .disabled
                 createGameScene(content)
-            }.gesture(tapEntityGesture)
-            // When this app runs on macOS or iOS simulator,
-            // add camera controls that orbit the origin.
-            #if os(macOS) || (os(iOS) && targetEnvironment(simulator))
-            .realityViewCameraControls(.orbit)
+            } placeholder: {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+            .background(.black)
+
+            #if os(iOS)
+                VStack {
+                    Spacer()
+
+                    HStack {
+                        Button(action: {
+                            nextDirectionPlayerofX = true
+                        }) {
+                            Image(systemName: "arrowshape.left")
+                                .resizable()
+                                .frame(width: 72, height: 72)
+                                .foregroundStyle(.white)
+                        }
+
+                        Spacer()
+
+                        Button(action: {
+                            nextDirectionPlayerofX = false
+                        }) {
+                            Image(systemName: "arrowshape.right")
+                                .resizable()
+                                .frame(width: 72, height: 72)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding()
+                .safeAreaPadding()
             #endif
-
-            // Add instructions to tap the cube.
-            VStack {
-                Spacer()
-                Text("Tap the cube to spin!")
-            }.padding()
         }
-    }
+        .overlay {
+            if !viewRouter.isPlaying {
+                ZStack {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.7))
+                        .edgesIgnoringSafeArea(.all)
 
-    /// A gesture that spins entities that have a spin component.
-    var tapEntityGesture: some Gesture {
-        TapGesture().targetedToEntity(where: .has(SpinComponent.self))
-            .onEnded({ gesture in
-                try? spinEntity(gesture.entity)
-            })
+                    VStack(spacing: 16) {
+                        Text("Sliding Game")
+                            .font(.title)
+                            .foregroundStyle(.white)
+                        Text("Tap to start")
+                            .foregroundStyle(.white)
+                    }
+                }
+                .onTapGesture {
+                    viewRouter.isPlaying = true
+                    moveState = [
+                        nextDirectionPlayerofX ? playerSpeed : 0,
+                        0,
+                        nextDirectionPlayerofX ? 0 : playerSpeed,
+                    ]
+                }
+            }
+        }
+        .onAppear {
+            if viewRouter.isPlaying {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    moveState = [
+                        nextDirectionPlayerofX ? playerSpeed : 0,
+                        0,
+                        nextDirectionPlayerofX ? 0 : playerSpeed,
+                    ]
+                }
+            }
+        }
+        .onChange(of: nextDirectionPlayerofX) {
+            moveState = [
+                nextDirectionPlayerofX ? playerSpeed : 0,
+                0,
+                nextDirectionPlayerofX ? 0 : playerSpeed,
+            ]
+        }
+        .onChange(of: viewRouter.isGameOver) { _, newValue in
+            if newValue {
+                viewRouter.currentPage = "game_over"
+            }
+        }
+        #if os(macOS)
+            .focusable()
+            .onKeyPress(.leftArrow) {
+                nextDirectionPlayerofX = true
+                print("press left")
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                nextDirectionPlayerofX = false
+                return .handled
+            }
+        #endif
     }
 
     /// Creates a game scene and adds it to the view content.
     ///
     /// - Parameter content: The active content for this RealityKit game.
-    fileprivate func createGameScene(_ content: any RealityViewContentProtocol) {
+    fileprivate func createGameScene(_ content: any RealityViewContentProtocol)
+    {
+
+        let rootEntity = AnchorEntity(world: .zero)
+        var simulation = PhysicsSimulationComponent()
+        simulation.gravity = [0, -9.81, 0]  // gravitasi "naik" instead of turun
+        rootEntity.components.set(simulation)
+
         let boxSize: SIMD3<Float> = [0.2, 0.2, 0.2]
         // A component that shows a red box model.
         let boxModel = ModelComponent(
             mesh: .generateBox(size: boxSize),
-            materials: [SimpleMaterial(color: .red, isMetallic: true)]
+            materials: [SimpleMaterial(color: .gray, isMetallic: false)]
         )
-        // Components that allow interaction and visual feedback.
-        let inputTargetComponent = InputTargetComponent()
-        let hoverComponent = HoverEffectComponent()
 
-        // A component that sets the collision shape.
-        let boxCollision = CollisionComponent(shapes: [.generateBox(size: boxSize)])
+        let boxCollision = CollisionComponent(
+            shapes: [.generateBox(size: boxSize)],
+            isStatic: true
+        )
+        let boxPhysicsBody = PhysicsBodyComponent(
+            massProperties: .default,
+            material: .default,
+            mode: .static
+        )
 
-        // A component that stores spin information.
-        let spinComponent = SpinComponent()
-
-        // Set all the entity's components.
         let boxEntity = Entity()
-        boxEntity.components.set([
-            boxModel, boxCollision, inputTargetComponent, hoverComponent,
-            spinComponent
-        ])
+        boxEntity.components.set([boxModel, boxCollision, boxPhysicsBody])
+        var lastBoxPosition = boxEntity.position
 
-        // Add the entity to the RealityView content.
-        content.add(boxEntity)
-
-        // If iOS device, except simulator.
-        #if os(iOS) && !targetEnvironment(simulator)
-        // Create an anchor target that is any floor surface
-        // greater than or equal to a 1x1m area.
-        let anchorTarget: AnchoringComponent.Target = .plane(
-            .horizontal, classification: .floor,
-            minimumBounds: .one
+        let playerModel = ModelComponent(
+            mesh: .generateSphere(radius: 0.1),
+            materials: [SimpleMaterial(color: .blue, isMetallic: false)]
         )
-        boxEntity.components.set(AnchoringComponent(anchorTarget))
-        // Move boxEntity up by half the box height, so that its base is on the ground.
-        boxEntity.position.y += boxSize.y / 2
-        #elseif os(macOS) || os(iOS)
-        // If macOS, or iOS simulator, add a perspective camera to the scene.
+        let playerCollision = CollisionComponent(shapes: [
+            .generateSphere(radius: 0.1)
+        ])
+        let playerPhysicsBody = PhysicsBodyComponent(
+            massProperties: .default,
+            material: .default,
+            mode: .dynamic
+        )
+
+        let playerEntity = Entity()
+        playerEntity.position = lastBoxPosition
+        playerEntity.position.y += boxSize.y * 1.5
+        playerEntity.components.set([
+            playerModel, playerCollision, playerPhysicsBody,
+        ])
+        rootEntity.addChild(playerEntity)
+
+        rootEntity.addChild(boxEntity)
+        for i in 0..<100 {
+            let box = boxEntity.clone(recursive: true)
+
+            let randomPositionXOrZ =
+                i.isMultiple(of: 3) ? Float.random(in: 0...1) : 0.5
+            if randomPositionXOrZ < 0.5 || i < 5 {
+                box.position.z = lastBoxPosition.z - boxSize.z
+                box.position.x = lastBoxPosition.x
+                isDirectionOfRandomOfX = false
+            } else if randomPositionXOrZ > 0.5 {
+                box.position.x = lastBoxPosition.x - boxSize.x
+                box.position.z = lastBoxPosition.z
+                isDirectionOfRandomOfX = true
+            } else {
+                box.position = [
+                    isDirectionOfRandomOfX
+                        ? lastBoxPosition.x - boxSize.x
+                        : lastBoxPosition.x,
+                    lastBoxPosition.y,
+                    isDirectionOfRandomOfX
+                        ? lastBoxPosition.z : lastBoxPosition.z - boxSize.z,
+                ]
+            }
+            lastBoxPosition = box.position
+            rootEntity.addChild(box)
+        }
+
         let camera = Entity()
         camera.components.set(PerspectiveCameraComponent())
-        content.add(camera)
+        rootEntity.addChild(camera)
+        let cameraLocation: SIMD3<Float> = [1, 1, 1]
 
-        // Set the camera position and orientation.
-        let cameraLocation: SIMD3<Float> = [1, 1, 2]
-        camera.look(at: .zero, from: cameraLocation, relativeTo: nil)
-        #endif
-    }
+        content.add(rootEntity)
+        _ = content.subscribe(to: SceneEvents.Update.self) { event in
 
-    /// Spins an entity around the y-axis.
-    /// - Parameter entity: The entity to spin.
-    func spinEntity(_ entity: Entity) throws {
-        // Get the entity's spin component.
-        guard let spinComponent = entity.components[SpinComponent.self]
-        else { return }
+            playerEntity.transform.translation -= moveState
 
-        // Create a spin action that makes one revolution
-        // around the axis from the component.
-        let spinAction = SpinAction(revolutions: 1, localAxis: spinComponent.spinAxis)
+            if playerEntity.position.y < 0 {
+                viewRouter.isGameOver = true
+            }
 
-        // Create a one second animation that spins an entity.
-        let spinAnimation = try AnimationResource.makeActionAnimation(
-            for: spinAction,
-            duration: 1,
-            bindTarget: .transform
-        )
-
-        // Play the animation that spins the entity.
-        entity.playAnimation(spinAnimation)
+            camera.look(
+                at: playerEntity.position,
+                from: playerEntity.position + cameraLocation,
+                relativeTo: nil
+            )
+        }
     }
 }
 
-#Preview {
-    ContentView()
-}
+//#Preview {
+//    ContentView()
+//}
