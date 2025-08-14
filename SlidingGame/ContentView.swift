@@ -9,12 +9,20 @@ import RealityKit
 import SwiftUI
 
 struct ContentView: View {
-    let playerSpeed: Float = 0.025
+    #if os(iOS)
+        let playerSpeed: Float = 0.025
+    #elseif os(macOS)
+        let playerSpeed: Float = 0.015
+    #endif
 
     @EnvironmentObject var viewRouter: ViewRouter
     @State var moveState: SIMD3<Float> = .zero
     @State var isDirectionOfRandomOfX = false
     @State var nextDirectionPlayerofX = false
+    @State var count: Int = 1
+    @State var boxes: [Entity] = []
+    @State var lastBoxPosition: SIMD3<Float> = .zero
+    @State var nextIndex = 0
 
     var body: some View {
         ZStack {
@@ -120,12 +128,11 @@ struct ContentView: View {
             .focusable()
             .onKeyPress(.leftArrow) {
                 nextDirectionPlayerofX = true
-                print("press left")
-                return .handled
+                return .ignored
             }
             .onKeyPress(.rightArrow) {
                 nextDirectionPlayerofX = false
-                return .handled
+                return .ignored
             }
         #endif
     }
@@ -160,7 +167,6 @@ struct ContentView: View {
 
         let boxEntity = Entity()
         boxEntity.components.set([boxModel, boxCollision, boxPhysicsBody])
-        var lastBoxPosition = boxEntity.position
 
         let playerModel = ModelComponent(
             mesh: .generateSphere(radius: 0.1),
@@ -183,31 +189,18 @@ struct ContentView: View {
         ])
         rootEntity.addChild(playerEntity)
 
-        rootEntity.addChild(boxEntity)
         for i in 0..<100 {
             let box = boxEntity.clone(recursive: true)
-
-            let randomPositionXOrZ =
-                i.isMultiple(of: 3) ? Float.random(in: 0...1) : 0.5
-            if randomPositionXOrZ < 0.5 || i < 5 {
-                box.position.z = lastBoxPosition.z - boxSize.z
-                box.position.x = lastBoxPosition.x
-                isDirectionOfRandomOfX = false
-            } else if randomPositionXOrZ > 0.5 {
-                box.position.x = lastBoxPosition.x - boxSize.x
-                box.position.z = lastBoxPosition.z
-                isDirectionOfRandomOfX = true
-            } else {
-                box.position = [
-                    isDirectionOfRandomOfX
-                        ? lastBoxPosition.x - boxSize.x
-                        : lastBoxPosition.x,
-                    lastBoxPosition.y,
-                    isDirectionOfRandomOfX
-                        ? lastBoxPosition.z : lastBoxPosition.z - boxSize.z,
-                ]
+            box.name = "box_\(i+1)"
+            if i != 0 {
+                box.position = boxNextPosition(
+                    i: i,
+                    boxSize: boxSize
+                )
             }
+
             lastBoxPosition = box.position
+            boxes.append(box)
             rootEntity.addChild(box)
         }
 
@@ -215,22 +208,82 @@ struct ContentView: View {
         camera.components.set(PerspectiveCameraComponent())
         rootEntity.addChild(camera)
         let cameraLocation: SIMD3<Float> = [1, 1, 1]
+        
 
         content.add(rootEntity)
         _ = content.subscribe(to: SceneEvents.Update.self) { event in
 
+//            for box in self.boxes {
+//                box.transform.translation += moveState
+//            }
             playerEntity.transform.translation -= moveState
-
-            if playerEntity.position.y < 0 {
-                viewRouter.isGameOver = true
-            }
-
+            
             camera.look(
                 at: playerEntity.position,
                 from: playerEntity.position + cameraLocation,
                 relativeTo: nil
             )
+
+            if playerEntity.position.y < 0 {
+                viewRouter.isGameOver = true
+            }
+
+            if viewRouter.isPlaying {
+                let box = boxes[nextIndex]
+                let distanceToPlayerX = abs(box.position.x - playerEntity.position.x)
+                let distanceToPlayerZ = abs(box.position.z - playerEntity.position.z)
+                    
+                if distanceToPlayerX > 0.5 || distanceToPlayerZ > 0.5 {
+                    let nextPosition = boxNextPosition(
+                        i: count,
+                        boxSize: boxSize,
+                        isStart: false
+                    )
+
+                    box.position = nextPosition
+                    lastBoxPosition = nextPosition
+                    count += 1
+                    nextIndex = (nextIndex + 1) % boxes.count
+                }
+            }
+
         }
+    }
+
+    private func boxNextPosition(
+        i: Int,
+        boxSize: SIMD3<Float>,
+        isStart: Bool = true,
+    ) -> SIMD3<Float> {
+        let randomPositionXOrZ =
+            i.isMultiple(of: 3) ? Float.random(in: 0...1) : 0.5
+
+        var nextPosition: SIMD3<Float> = .zero
+
+        if randomPositionXOrZ < 0.5 || (isStart && i < 5) {
+            nextPosition.z = lastBoxPosition.z - boxSize.z
+            nextPosition.x = lastBoxPosition.x
+            isDirectionOfRandomOfX = false
+        } else if randomPositionXOrZ > 0.5 {
+            nextPosition.x = lastBoxPosition.x - boxSize.x
+            nextPosition.z = lastBoxPosition.z
+            isDirectionOfRandomOfX = true
+        } else {
+            nextPosition = [
+                isDirectionOfRandomOfX
+                    ? lastBoxPosition.x - boxSize.x
+                    : lastBoxPosition.x,
+                lastBoxPosition.y,
+                isDirectionOfRandomOfX
+                    ? lastBoxPosition.z : lastBoxPosition.z - boxSize.z,
+            ]
+        }
+
+        if count.isMultiple(of: 3) {
+            count = 0
+        }
+
+        return nextPosition
     }
 }
 
