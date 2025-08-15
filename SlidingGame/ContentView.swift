@@ -23,6 +23,7 @@ struct ContentView: View {
     @State var boxes: [Entity] = []
     @State var lastBoxPosition: SIMD3<Float> = .zero
     @State var nextIndex = 0
+    @State var elapsedTime: TimeInterval = 0
 
     var body: some View {
         ZStack {
@@ -45,35 +46,55 @@ struct ContentView: View {
                 }
             }
             .background(.black)
+            .onTapGesture {
+                nextDirectionPlayerofX.toggle()
+            }
+            
+            VStack {
+                HStack(spacing: 16) {
+                    Image(systemName: nextDirectionPlayerofX ? "arrowshape.left" : "arrowshape.right")
+                        .font(.title)
+                        .foregroundStyle(.white)
+                    
+                    Text("\(Int(elapsedTime))")
+                        .font(.title)
+                        .foregroundStyle(.white)
+                    
+                    Spacer()
+                }
+                
+                Spacer()
+            }
+            .padding()
 
             #if os(iOS)
-                VStack {
-                    Spacer()
-
-                    HStack {
-                        Button(action: {
-                            nextDirectionPlayerofX = true
-                        }) {
-                            Image(systemName: "arrowshape.left")
-                                .resizable()
-                                .frame(width: 72, height: 72)
-                                .foregroundStyle(.white)
-                        }
-
-                        Spacer()
-
-                        Button(action: {
-                            nextDirectionPlayerofX = false
-                        }) {
-                            Image(systemName: "arrowshape.right")
-                                .resizable()
-                                .frame(width: 72, height: 72)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-                .padding()
-                .safeAreaPadding()
+//                VStack {
+//                    Spacer()
+//
+//                    HStack {
+//                        Button(action: {
+//                            nextDirectionPlayerofX = true
+//                        }) {
+//                            Image(systemName: "arrowshape.left")
+//                                .resizable()
+//                                .frame(width: 72, height: 72)
+//                                .foregroundStyle(.white)
+//                        }
+//
+//                        Spacer()
+//
+//                        Button(action: {
+//                            nextDirectionPlayerofX = false
+//                        }) {
+//                            Image(systemName: "arrowshape.right")
+//                                .resizable()
+//                                .frame(width: 72, height: 72)
+//                                .foregroundStyle(.white)
+//                        }
+//                    }
+//                }
+//                .padding()
+//                .safeAreaPadding()
             #endif
         }
         .overlay {
@@ -212,10 +233,6 @@ struct ContentView: View {
 
         content.add(rootEntity)
         _ = content.subscribe(to: SceneEvents.Update.self) { event in
-
-//            for box in self.boxes {
-//                box.transform.translation += moveState
-//            }
             playerEntity.transform.translation -= moveState
             
             camera.look(
@@ -233,7 +250,7 @@ struct ContentView: View {
                 let distanceToPlayerX = abs(box.position.x - playerEntity.position.x)
                 let distanceToPlayerZ = abs(box.position.z - playerEntity.position.z)
                     
-                if distanceToPlayerX > 0.5 || distanceToPlayerZ > 0.5 {
+                if distanceToPlayerX > 1.5 || distanceToPlayerZ > 1.5 {
                     let nextPosition = boxNextPosition(
                         i: count,
                         boxSize: boxSize,
@@ -245,6 +262,7 @@ struct ContentView: View {
                     count += 1
                     nextIndex = (nextIndex + 1) % boxes.count
                 }
+                elapsedTime += event.deltaTime
             }
 
         }
